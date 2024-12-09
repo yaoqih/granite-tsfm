@@ -20,7 +20,9 @@ from tsfm_public.models.tinytimemixer.utils import get_ttm_args
 from tsfm_public.toolkit.get_model import get_model
 from tsfm_public.toolkit.lr_finder import optimal_lr_finder
 from tsfm_public.toolkit.visualization import plot_predictions
-
+from pathlib import Path
+from tqdm import tqdm
+from transformers.trainer_utils import get_last_checkpoint
 
 logger = logging.getLogger(__file__)
 
@@ -36,7 +38,7 @@ logger = logging.getLogger(__file__)
 # Basic usage:
 # python ttm_pretrain_sample.py --data_root_path datasets/
 # See the get_ttm_args() function to know more about other TTM arguments
-
+resume=True
 
 def get_base_model(args):
     # Pre-train a `TTM` forecasting model
@@ -44,11 +46,11 @@ def get_base_model(args):
         context_length=args.context_length,
         prediction_length=args.forecast_length,
         patch_length=args.patch_length,
-        num_input_channels=1,
+        num_input_channels=11,
         patch_stride=args.patch_length,
         d_model=args.d_model,
         num_layers=args.num_layers,  # increase the number of layers if we want more complex models
-        mode="common_channel",
+        mode="mix_channel",
         expansion_factor=2,
         dropout=args.dropout,
         head_dropout=args.head_dropout,
@@ -58,7 +60,7 @@ def get_base_model(args):
         # decoder params
         decoder_num_layers=args.decoder_num_layers,  # increase the number of layers if we want more complex models
         decoder_adaptive_patching_levels=0,
-        decoder_mode="common_channel",
+        decoder_mode="mix_channel",
         decoder_raw_residual=False,
         use_decoder=True,
         decoder_d_model=args.decoder_d_model,
@@ -77,14 +79,19 @@ def pretrain(args, model, dset_train, dset_val):
         dset_train,
         batch_size=args.batch_size,
     )
-    print("OPTIMAL SUGGESTED LEARNING RATE =", learning_rate)
-
     # learning_rate = args.learning_rate
+    last_checkpoint = None
+    if os.path.exists(os.path.join(args.save_dir, "checkpoint") and resume):
+        last_checkpoint = get_last_checkpoint(os.path.join(args.save_dir, "checkpoint"))
+    
+
+    
+    print("OPTIMAL SUGGESTED LEARNING RATE =", learning_rate)
 
     trainer_args = TrainingArguments(
         output_dir=os.path.join(args.save_dir, "checkpoint"),
-        overwrite_output_dir=True,
-        learning_rate=args.learning_rate,
+        overwrite_output_dir=True if not resume else False,
+        learning_rate=learning_rate,
         num_train_epochs=args.num_epochs,
         seed=args.random_seed,
         eval_strategy="epoch",
@@ -95,12 +102,14 @@ def pretrain(args, model, dset_train, dset_val):
         report_to="tensorboard",
         save_strategy="epoch",
         logging_strategy="epoch",
-        save_total_limit=1,
+        save_total_limit=3,
         logging_dir=os.path.join(args.save_dir, "logs"),  # Make sure to specify a logging directory
         load_best_model_at_end=True,  # Load the best model when training ends
         metric_for_best_model="eval_loss",  # Metric to monitor for early stopping
         greater_is_better=False,  # For loss
     )
+    print("tensorboard --logdir="+os.path.join(args.save_dir, "logs")+' --bind_all')
+
     # Optimizer and scheduler
     optimizer = AdamW(model.parameters(), lr=learning_rate)
     scheduler = OneCycleLR(
@@ -137,7 +146,9 @@ def pretrain(args, model, dset_train, dset_val):
         )
 
     # Train
-    trainer.train()
+    if resume:
+        print("Resuming from checkpoint:",last_checkpoint)
+    trainer.train(resume_from_checkpoint=last_checkpoint)
 
     # Save the pretrained model
 
@@ -161,22 +172,22 @@ def inference(args, model_path, dset_test):
     )
     # evaluate = zero-shot performance
     print("+" * 20, "Test MSE output:", "+" * 20)
-    output = trainer.evaluate(dset_test)
-    print(output)
+    # output = trainer.evaluate(dset_test)
+    # print(output)
 
     # get predictions
 
-    predictions_dict = trainer.predict(dset_test)
+    # predictions_dict = trainer.predict(dset_test)
 
-    predictions_np = predictions_dict.predictions[0]
+    # predictions_np = predictions_dict.predictions[0]
 
-    print(predictions_np.shape)
+    # print(predictions_np.shape)
 
     # get backbone embeddings (if needed for further analysis)
 
-    backbone_embedding = predictions_dict.predictions[1]
+    # backbone_embedding = predictions_dict.predictions[1]
 
-    print(backbone_embedding.shape)
+    # print(backbone_embedding.shape)
 
     plot_path = os.path.join(args.save_dir, "plots")
     # plot
@@ -186,6 +197,7 @@ def inference(args, model_path, dset_test):
         plot_dir=plot_path,
         plot_prefix="test_inference",
         channel=0,
+        num_plots=100,
     )
     print("Plots saved in location:", plot_path)
 
@@ -203,35 +215,57 @@ if __name__ == "__main__":
 
     # Data prep
     # Dataset
-    TARGET_DATASET = "etth1"
-    dataset_path = (
-        "ETTh1_2.csv"  # mention the dataset path
-    )
+    # TARGET_DATASET = "etth1"
+    data_path='./origin_data'
     timestamp_column = "date"
-    id_columns = []  # mention the ids that uniquely identify a time-series.
+    id_columns = ['stock_id']  # mention the ids that uniquely identify a time-series.
 
-    target_columns = ["HUFL", "HULL", "MUFL", "MULL", "LUFL", "LULL", "OT"]
+    target_columns = ['change_rate']
+    conditional_columns=['open','high','low','close','volume','amount','amplitude','pct_chg','change','turnover_rate']
 
     # mention the train, valid and split config.
-    split_config = {
-        "train": [0, 8640],
-        "valid": [8640, 11520],
-        "test": [
-            11520,
-            14400,
-        ],
-    }
+    # split_config = {
+    #     "train": [0, 8640],
+    #     "valid": [8640, 11520],
+    #     "test": [
+    #         11520,
+    #         14400,
+    #     ],
+    # }
 
-    data = pd.read_csv(
-        dataset_path,
-        parse_dates=[timestamp_column],
-    )
+    parquet_files = list(Path(data_path).glob('*.parquet'))
+
+    # 创建一个空列表来存储所有数据框
+    dfs = []
+
+    # 读取每个parquet文件并处理
+    for file in tqdm(parquet_files,'reading parquet files'):
+        # 读取parquet文件
+        df = pd.read_parquet(file)
+        
+        # 将date列转换为datetime类型
+        df[timestamp_column] = pd.to_datetime(df[timestamp_column])
+        while df[['open', 'high', 'low', 'close']].min().min() < 1:
+            df['open'] += 1
+            df['high'] += 1
+            df['low'] += 1
+            df['close'] += 1
+        df['change_rate']=(df['open'].shift(-2)-df['open'].shift(-1))/(df['open'].shift(-1))
+        df.dropna(inplace=True)
+        df['stock_id']=file.stem
+        # 将处理后的数据框添加到列表中
+        dfs.append(df)
+
+    # 合并所有数据框
+    final_df = pd.concat(dfs, ignore_index=True)
+
 
     column_specifiers = {
         "timestamp_column": timestamp_column,
         "id_columns": id_columns,
         "target_columns": target_columns,
         "control_columns": [],
+        "conditional_columns":conditional_columns,
     }
 
     tsp = TimeSeriesPreprocessor(
@@ -243,11 +277,11 @@ if __name__ == "__main__":
         scaler_type="standard",
     )
 
-    dset_train, dset_valid, dset_test = get_datasets(tsp, data, split_config)
+    dset_train, dset_valid, dset_test = get_datasets(tsp, final_df)
 
     # Get model
     model = get_base_model(args)
-
+    print(model)
     # Pretrain
     model_save_path = pretrain(args, model, dset_train, dset_valid)
     print("=" * 20, "Pretraining Completed!", "=" * 20)

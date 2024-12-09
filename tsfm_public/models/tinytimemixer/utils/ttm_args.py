@@ -20,7 +20,7 @@ def get_ttm_args():
         "-fl",
         type=int,
         required=False,
-        default=96,
+        default=1,
         help="Forecast length",
     )
     parser.add_argument(
@@ -28,7 +28,7 @@ def get_ttm_args():
         "-cl",
         type=int,
         required=False,
-        default=512,
+        default=32,
         help="History context length",
     )
     parser.add_argument(
@@ -36,7 +36,7 @@ def get_ttm_args():
         "-pl",
         type=int,
         required=False,
-        default=64,
+        default=16,
         help="Patch length",
     )
     parser.add_argument(
@@ -44,7 +44,7 @@ def get_ttm_args():
         "-apl",
         type=int,
         required=False,
-        default=3,
+        default=6,
         help="Number of adaptive patching levels of TTM",
     )
     parser.add_argument(
@@ -52,7 +52,7 @@ def get_ttm_args():
         "-dms",
         type=int,
         required=False,
-        default=3,
+        default=12,
         help="Model hidden dimension",
     )
     parser.add_argument(
@@ -60,7 +60,7 @@ def get_ttm_args():
         "-ddms",
         type=int,
         required=False,
-        default=2,
+        default=12,
         help="Decoder hidden dimension",
     )
     parser.add_argument(
@@ -68,11 +68,11 @@ def get_ttm_args():
         "-ng",
         type=int,
         required=False,
-        default=None,
+        default=1,
         help="Number of GPUs",
     )
     parser.add_argument("--random_seed", "-rs", type=int, required=False, default=42, help="Random seed")
-    parser.add_argument("--batch_size", "-bs", type=int, required=False, default=3000, help="Batch size")
+    parser.add_argument("--batch_size", "-bs", type=int, required=False, default=1024, help="Batch size")
     parser.add_argument(
         "--num_epochs",
         "-ne",
@@ -95,7 +95,7 @@ def get_ttm_args():
         "-lr",
         type=float,
         required=False,
-        default=0.001,
+        default=0.1,
         help="Learning rate",
     )
     parser.add_argument(
@@ -103,7 +103,7 @@ def get_ttm_args():
         "-ds",
         type=str,
         required=False,
-        default="etth1",
+        default="stock",
         help="Dataset",
     )
     parser.add_argument(
@@ -192,7 +192,7 @@ def get_ttm_args():
         "--num_layers",
         type=int,
         required=False,
-        default=2,
+        default=3,
         help="Number of  layers",
     )
 
@@ -200,7 +200,7 @@ def get_ttm_args():
         "--decoder_num_layers",
         type=int,
         required=False,
-        default=2,
+        default=4,
         help="Number of  decoder layers",
     )
 

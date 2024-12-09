@@ -141,3 +141,11 @@ notebooks/thinklab/checkpoint/**
 # Version
 /tsfm_public/_version.py
 **/checkpoint**/**
+
+origin_data
+temp
+tmp
+ttm_finetuned_models
+wandb
+ETTh1_2.csv
+.idea

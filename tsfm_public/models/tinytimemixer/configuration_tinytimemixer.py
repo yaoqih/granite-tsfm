@@ -179,7 +179,7 @@ class TinyTimeMixerConfig(PretrainedConfig):
         use_positional_encoding: bool = False,
         positional_encoding_type: str = "sincos",
         scaling: Optional[Union[str, bool]] = "std",
-        loss: Optional[str] = "mse",
+        loss: Optional[str] = "mae",
         init_std: float = 0.02,
         post_init: bool = False,
         norm_eps: float = 1e-5,

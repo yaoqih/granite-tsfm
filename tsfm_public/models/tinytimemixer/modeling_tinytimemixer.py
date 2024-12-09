@@ -1904,6 +1904,7 @@ class TinyTimeMixerForPrediction(TinyTimeMixerPreTrainedModel):
             y_hat = y_hat * scale + loc
             if future_values is not None and return_loss is True and loss is not None:
                 if future_observed_mask is not None:
+                    fut_mask_bool[:,:,1:]=False
                     loss_val = loss(y_hat[fut_mask_bool], future_values[fut_mask_bool])
                 else:
                     # avoiding mask operations for performance benefits on normal scenarios.
