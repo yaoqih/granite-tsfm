@@ -5,11 +5,23 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Python Debugger: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": false
+            
+        },
+        {
             "name": "TSFM Inference Server",
             "type": "debugpy",
             "request": "launch",
             "module": "uvicorn",
-            "env": {"TSFM_MODEL_DIR": "./mytest-tsfm", "PROMETHEUS_MULTIPROC_DIR" : "/tmp"},
+            "env": {
+                "TSFM_MODEL_DIR": "./mytest-tsfm",
+                "PROMETHEUS_MULTIPROC_DIR": "/tmp"
+            },
             "cwd": "${workspaceFolder}/services/inference",
             "args": [
                 "tsfminference.main:app",
@@ -22,6 +34,6 @@
                 "8000"
             ],
             "jinja": true
-        }
+        },
     ]
 }

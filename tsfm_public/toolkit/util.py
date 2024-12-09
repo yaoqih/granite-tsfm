@@ -269,9 +269,13 @@ def _split_group_train_test(
     valid_test_offset: int = 0,
 ):
     l = len(group_df)
+    if type(train) == float:
+        train_size = int(l * train)
+        test_size = int(l * test)
+    else:
+        train_size = len(group_df[group_df['date']<train])
+        test_size = len(group_df[group_df['date']<test])-train_size
 
-    train_size = int(l * train)
-    test_size = int(l * test)
 
     valid_size = l - train_size - test_size
 

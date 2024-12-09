@@ -809,8 +809,12 @@ class TinyTimeMixerLayer(nn.Module):
             hidden = self.channel_feature_mixer(hidden)
 
         if self.num_patches > 1:
+            identity = hidden
             hidden = self.patch_mixer(hidden)
+            hidden = hidden + identity
+        identity = hidden
         hidden = self.feature_mixer(hidden)  # hidden: (batch_size x num_patches x d_model)
+        hidden = hidden + identity
         return hidden
 
 
@@ -1064,106 +1068,101 @@ class TinyTimeMixerDecoder(nn.Module):
 
 
 class TinyTimeMixerForPredictionHead(nn.Module):
-    """Prediction Head for Forecasting
-
-    Args:
-        config (`TinyTimeMixerConfig`, *required*): Configuration.
-    """
-
-    def __init__(self, config: TinyTimeMixerConfig, distribution_output=None):
+    def __init__(self, config: TinyTimeMixerConfig, distribution_output=None, num_heads=3):
         super().__init__()
-
+        
+        self.num_heads = num_heads
         self.prediction_channel_indices = config.prediction_channel_indices
-
+        
         if self.prediction_channel_indices is not None:
             self.prediction_channel_indices.sort()
-
+            
         self.prediction_filter_length = config.prediction_filter_length
-
         self.dropout_layer = nn.Dropout(config.head_dropout)
         self.enable_forecast_channel_mixing = config.enable_forecast_channel_mixing
+        
         if config.use_decoder:
             head_d_model = config.decoder_d_model
         else:
             head_d_model = config.d_model
-
+            
+        # 创建多个预测头
         if distribution_output is None:
-            self.base_forecast_block = nn.Linear((config.num_patches * head_d_model), config.prediction_length)
+            self.forecast_heads = nn.ModuleList([
+                nn.Linear((config.num_patches * head_d_model), config.prediction_length)
+                for _ in range(num_heads)
+            ])
         else:
-            self.base_forecast_block = distribution_output.get_parameter_projection(config.num_patches * head_d_model)
+            self.forecast_heads = nn.ModuleList([
+                distribution_output.get_parameter_projection(config.num_patches * head_d_model)
+                for _ in range(num_heads)
+            ])
 
         self.flatten = nn.Flatten(start_dim=-2)
-
+        
         if self.enable_forecast_channel_mixing:
             temp_config = copy.deepcopy(config)
             if self.prediction_filter_length is not None:
                 temp_config.prediction_length = self.prediction_filter_length
-
             self.fcm_block = ForecastChannelHeadMixer(config=temp_config)
-
+    
     def forward(self, hidden_features, past_values, future_values=None):
-        """
-
-        Args:
-            hidden_features `(batch_size, n_vars, num_patch, d_model)` in `common_channel`/`mix_channel` mode.): Input hidden
-                features.
-
-            past_values (`torch.FloatTensor` of shape `(batch_size, seq_length, num_input_channels)`):
-            Context values of the time series. For a forecasting task, this denotes the history/past time series values.
-            For univariate time series, `num_input_channels` dimension should be 1. For multivariate time series, it is
-            greater than 1.
-
-            future_values (`torch.Tensor` of shape `(batch_size, prediction length, input_channels)`, *optional*, Defaults to None):
-                Actual groundtruths of the forecasts. Pass dummy values (say 0) for forecast channels, if groundtruth is unknown.
-                Pass the correct values for Exogenous channels where the forecast values are known.
-
-
-        Returns:
-            `torch.Tensor` of shape `(batch_size, prediction_length, forecast_channels)`.
-
-        """
-
-        hidden_features = self.flatten(hidden_features)  # [batch_size x n_vars x num_patch * d_model]
-        hidden_features = self.dropout_layer(hidden_features)  # [batch_size x n_vars x num_patch * d_model]
-        forecast = self.base_forecast_block(hidden_features)  # [batch_size x n_vars x prediction_length]
-        if isinstance(forecast, tuple):
-            forecast = tuple(z.transpose(-1, -2) for z in forecast)
+        hidden_features = self.flatten(hidden_features)
+        hidden_features = self.dropout_layer(hidden_features)
+        
+        # 使用多个预测头进行预测
+        forecasts = []
+        for head in self.forecast_heads:
+            forecast = head(hidden_features)
+            
+            if isinstance(forecast, tuple):
+                forecast = tuple(z.transpose(-1, -2) for z in forecast)
+            else:
+                forecast = forecast.transpose(-1, -2)
+                
+            if self.prediction_channel_indices is not None:
+                if isinstance(forecast, tuple):
+                    forecast = tuple(z[..., self.prediction_channel_indices] for z in forecast)
+                else:
+                    forecast = forecast[..., self.prediction_channel_indices]
+                    
+            if self.prediction_filter_length is not None:
+                if isinstance(forecast, tuple):
+                    forecast = tuple(z[:, :self.prediction_filter_length, :] for z in forecast)
+                else:
+                    forecast = forecast[:, :self.prediction_filter_length, :]
+                    
+            forecasts.append(forecast)
+        
+        # 合并多个预测头的结果
+        if isinstance(forecasts[0], tuple):
+            # 处理分布输出的情况
+            final_forecast = tuple(
+                torch.mean(torch.stack([f[i] for f in forecasts]), dim=0)
+                for i in range(len(forecasts[0]))
+            )
         else:
-            forecast = forecast.transpose(-1, -2)  # [batch_size x prediction_length x n_vars]
-
-        if self.prediction_channel_indices is not None:
-            if isinstance(forecast, tuple):
-                forecast = tuple(z[..., self.prediction_channel_indices] for z in forecast)
-            else:
-                forecast = forecast[
-                    ..., self.prediction_channel_indices
-                ]  # [batch_size x prediction_length x prediction_n_vars]
-
-        if self.prediction_filter_length is not None:
-            if isinstance(forecast, tuple):
-                forecast = tuple(z[:, : self.prediction_filter_length, :] for z in forecast)
-            else:
-                forecast = forecast[
-                    :, : self.prediction_filter_length, :
-                ]  # [batch_size x prediction_filter_length x prediction_n_vars]
-
+            # 处理普通输出的情况
+            final_forecast = torch.mean(torch.stack(forecasts), dim=0)
+            
         if (
             self.prediction_filter_length is not None
             and future_values is not None
             and future_values.shape[1] != self.prediction_filter_length
         ):
-            future_values = future_values[
-                :, : self.prediction_filter_length, :
-            ]  # [batch_size x prediction_filter_length x n_vars]
-
+            future_values = future_values[:, :self.prediction_filter_length, :]
+            
         if self.enable_forecast_channel_mixing:
-            if isinstance(forecast, tuple):
+            if isinstance(final_forecast, tuple):
                 raise ValueError("Forecast channel mixing is not enabled for distribution head")
             else:
-                forecast = self.fcm_block(forecast, past_values=past_values, future_values=future_values)
-                # [batch_size x prediction_length x prediction_n_vars]
-
-        return forecast
+                final_forecast = self.fcm_block(
+                    final_forecast, 
+                    past_values=past_values, 
+                    future_values=future_values
+                )
+                
+        return final_forecast
 
 
 class TinyTimeMixerPreTrainedModel(PreTrainedModel):

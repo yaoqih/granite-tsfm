@@ -15,7 +15,37 @@ from .util import join_list_without_repeat
 
 
 LOGGER = logging.getLogger(__file__)
-
+def inverse_transform_selected_columns(df, scaler):
+    """
+    对DataFrame中被StandardScaler转换过的列进行恢复
+    
+    参数:
+    df: 需要恢复的DataFrame
+    scaler: 训练好的StandardScaler对象
+    
+    返回:
+    恢复后的DataFrame
+    """
+    # 获取需要恢复的列名
+    scaled_columns = scaler.feature_names_in_
+    
+    # 检查所有需要恢复的列是否都在DataFrame中
+    if not all(col in df.columns for col in scaled_columns):
+        missing_cols = [col for col in scaled_columns if col not in df.columns]
+        raise ValueError(f"DataFrame中缺少以下列: {missing_cols}")
+    
+    # 创建DataFrame的副本
+    df_restored = df.copy()
+    
+    # 只对需要恢复的列进行inverse_transform
+    scaled_data = df[scaled_columns].values
+    restored_data = scaler.inverse_transform(scaled_data)
+    
+    # 将恢复后的数据放回DataFrame
+    for i, col in enumerate(scaled_columns):
+        df_restored[col] = restored_data[:, i]
+    
+    return df_restored
 
 class BaseDFDataset(torch.utils.data.Dataset):
     """Base dataset for time series models built upon a pandas dataframe
@@ -624,6 +654,11 @@ class ForecastDFDataset(BaseConcatDFDataset):
                 ]
 
             return ret
+        def revert_scaling(self, tsp):
+            df=self.data_df.copy()
+            df=inverse_transform_selected_columns(df, tsp.scaler_dict['0'])
+            df=inverse_transform_selected_columns(df, tsp.target_scaler_dict['0'])
+            return df
 
         def __len__(self):
             return max((len(self.X) - self.context_length - self.prediction_length) // self.stride + 1, 0)

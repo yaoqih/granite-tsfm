@@ -31,6 +31,7 @@ import comet_ml
 import math
 import os
 import tempfile
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 import pandas as pd
 from torch.optim import AdamW
@@ -46,6 +47,7 @@ from tsfm_public import (
 from tsfm_public.toolkit.get_model import get_model
 from tsfm_public.toolkit.lr_finder import optimal_lr_finder
 from tsfm_public.toolkit.visualization import plot_predictions
+import numpy as np
 
 # %% [markdown]
 # ## Important arguments
@@ -66,7 +68,7 @@ OUT_DIR = "ttm_finetuned_models/"
 
 
 # Forecasting parameters
-context_length = 24
+context_length = 32
 forecast_length = 1
 
 # %% [markdown]
@@ -78,7 +80,19 @@ forecast_length = 1
 timestamp_column = "date"
 # timestamp_column = "timestamp"
 id_columns = []
-
+def save_result(trainer,dataset,save_path='funtain.xlsx'):
+    context_length=trainer.model.config.context_length
+    predictions_dict = trainer.predict(dataset)
+    df=dataset.datasets[0].revert_scaling(tsp)
+    flattened_array = predictions_dict.predictions[0][:,:,0].flatten()  # 变成一维数组，长度为324
+    additional_elements = np.zeros(context_length)  # 或者其他你想要的值
+    final_array = np.concatenate([additional_elements, flattened_array])
+    df['predict'] = final_array*tsp.target_scaler_dict['0'].scale_+tsp.target_scaler_dict['0'].mean_
+    df = df.drop(columns=['group'])
+    df= df.iloc[context_length:]
+    # reset_index 可以将结果的索引重置为默认的整数索引
+    df.reset_index(drop=True, inplace=True)
+    df.to_excel(save_path, index=False)  # 保存为Excel文件
 for file in os.listdir(DATA_ROOT_PATH):
     file_path = os.path.join(DATA_ROOT_PATH, file)
     data = pd.read_parquet(
@@ -150,7 +164,7 @@ for file in os.listdir(DATA_ROOT_PATH):
     # ## Zero-shot evaluation method
 
     # %%
-    TTM_MODEL_PATH = "/root/granite-tsfm/tmp/TTM_cl-24_fl-1_pl-16_apl-6_ne-5_es-True/checkpoint/checkpoint-43950"
+    TTM_MODEL_PATH = "/root/granite-tsfm/tmp/TTM_cl-32_fl-1_pl-16_apl-6_ne-25_es-True/checkpoint/checkpoint-166497"
 
     zeroshot_model = get_model(
         TTM_MODEL_PATH,
@@ -160,9 +174,8 @@ for file in os.listdir(DATA_ROOT_PATH):
         num_input_channels=tsp.num_input_channels,
     )
     zeroshot_model
-
+    # open("model.txt", "w").write(str(zeroshot_model))
     # %%
-    tsp.prediction_channel_indices
 
     # %%
     tsp.num_input_channels
@@ -180,7 +193,9 @@ for file in os.listdir(DATA_ROOT_PATH):
 
     # %%
     print(zeroshot_trainer.evaluate(test_dataset))
+    # %%
 
+    save_result(zeroshot_trainer,test_dataset,'before_finetune.xlsx')
     # %%
     # plot
     # plot_predictions(
@@ -204,7 +219,7 @@ for file in os.listdir(DATA_ROOT_PATH):
         context_length=context_length,
         prediction_length=forecast_length,
         num_input_channels=tsp.num_input_channels,
-        decoder_mode="mix_channel",  # ch_mix:  set to mix_channel for mixing channels in history
+        # decoder_mode="mix_channel",  # ch_mix:  set to mix_channel for mixing channels in history
         prediction_channel_indices=tsp.prediction_channel_indices,
     )
     finetune_forecast_model
@@ -219,8 +234,8 @@ for file in os.listdir(DATA_ROOT_PATH):
     )
 
     # Freeze the backbone of the model
-    for param in finetune_forecast_model.backbone.parameters():
-        param.requires_grad = False
+    # for param in finetune_forecast_model.backbone.parameters():
+    #     param.requires_grad = False
 
     # Count params
     print(
@@ -296,6 +311,7 @@ for file in os.listdir(DATA_ROOT_PATH):
 
     # %%
     print(finetune_forecast_trainer.evaluate(test_dataset))
+    save_result(finetune_forecast_trainer,test_dataset,'after_finetune.xlsx')
     exit()
     # %%
     # plot_predictions(

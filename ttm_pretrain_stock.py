@@ -5,6 +5,7 @@ import logging
 import math
 import os
 import tempfile
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 import pandas as pd
 from torch.optim import AdamW
@@ -23,9 +24,9 @@ from tsfm_public.toolkit.visualization import plot_predictions
 from pathlib import Path
 from tqdm import tqdm
 from transformers.trainer_utils import get_last_checkpoint
+from datetime import datetime
 
 logger = logging.getLogger(__file__)
-
 # TTM pre-training example.
 # This scrips provides a toy example to pretrain a Tiny Time Mixer (TTM) model on
 # the `etth1` dataset. For pre-training TTM on a much large set of datasets, please
@@ -38,7 +39,7 @@ logger = logging.getLogger(__file__)
 # Basic usage:
 # python ttm_pretrain_sample.py --data_root_path datasets/
 # See the get_ttm_args() function to know more about other TTM arguments
-resume=True
+resume=False
 
 def get_base_model(args):
     # Pre-train a `TTM` forecasting model
@@ -64,6 +65,7 @@ def get_base_model(args):
         decoder_raw_residual=False,
         use_decoder=True,
         decoder_d_model=args.decoder_d_model,
+        prediction_channel_indices=[0],
     )
 
     model = TinyTimeMixerForPrediction(config)
@@ -254,6 +256,8 @@ if __name__ == "__main__":
         df.dropna(inplace=True)
         df['stock_id']=file.stem
         # 将处理后的数据框添加到列表中
+        df = df[df['date'] >= datetime(2009, 1, 1)]
+
         dfs.append(df)
 
     # 合并所有数据框
@@ -277,11 +281,11 @@ if __name__ == "__main__":
         scaler_type="standard",
     )
 
-    dset_train, dset_valid, dset_test = get_datasets(tsp, final_df)
+    dset_train, dset_valid, dset_test = get_datasets(tsp, final_df,split_config = {"train": '2022-01-01', "test": '2023-01-01'})
 
     # Get model
     model = get_base_model(args)
-    print(model)
+    # print(model)
     # Pretrain
     model_save_path = pretrain(args, model, dset_train, dset_valid)
     print("=" * 20, "Pretraining Completed!", "=" * 20)
