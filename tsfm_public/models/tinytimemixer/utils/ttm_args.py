@@ -78,7 +78,7 @@ def get_ttm_args():
         "-ne",
         type=int,
         required=False,
-        default=25,
+        default=30,
         help="Number of epochs",
     )
 
@@ -143,7 +143,7 @@ def get_ttm_args():
         "-ept",
         type=int,
         required=False,
-        default=0,
+        default=1,
         help="Enable prefix tuning in TTM.",
     )
     parser.add_argument(

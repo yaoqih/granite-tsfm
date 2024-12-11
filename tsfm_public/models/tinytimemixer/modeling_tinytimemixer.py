@@ -806,15 +806,21 @@ class TinyTimeMixerLayer(nn.Module):
             `torch.Tensor`: Transformed tensor.
         """
         if self.mode == "mix_channel":
+            residual = hidden
             hidden = self.channel_feature_mixer(hidden)
+            hidden = (hidden + residual)/2  # 残差连接
 
+        # 在 patch_mixer 前后添加残差连接
         if self.num_patches > 1:
-            identity = hidden
+            residual = hidden
             hidden = self.patch_mixer(hidden)
-            hidden = hidden + identity
-        identity = hidden
-        hidden = self.feature_mixer(hidden)  # hidden: (batch_size x num_patches x d_model)
-        hidden = hidden + identity
+            hidden = (hidden + residual)/2  # 残差连接
+
+        # 在 feature_mixer 前后添加残差连接
+        residual = hidden
+        hidden = self.feature_mixer(hidden)
+        hidden = (hidden + residual)/2  # 残差连接
+
         return hidden
 
 
@@ -944,6 +950,127 @@ class TinyTimeMixerBlock(nn.Module):
             return embedding, all_hidden_states
         else:
             return embedding, None
+
+
+class TinyTimeMixerDecoder(nn.Module):
+    """Decoder for tiny time mixer
+
+    Args:
+        config (`TinyTimeMixerConfig`, *required*):
+            Configuration.
+    """
+
+    def __init__(self, config: TinyTimeMixerConfig):
+        super().__init__()
+
+        if config.d_model != config.decoder_d_model:
+            self.adapter = nn.Linear(config.d_model, config.decoder_d_model)
+        else:
+            self.adapter = None
+
+        self.decoder_raw_residual = config.decoder_raw_residual
+        self.num_input_channels = config.num_input_channels
+
+        if config.decoder_raw_residual:
+            self.decoder_raw_embedding = nn.Linear(config.patch_length, config.decoder_d_model)
+            # nn.init.zeros_(self.decoder_raw_embedding.weight)
+            # nn.init.zeros_(self.decoder_raw_embedding.bias)
+
+        decoder_config = copy.deepcopy(config)
+        decoder_config.num_layers = config.decoder_num_layers
+        decoder_config.d_model = config.decoder_d_model
+        decoder_config.dropout = config.head_dropout
+        decoder_config.adaptive_patching_levels = config.decoder_adaptive_patching_levels
+        decoder_config.mode = config.decoder_mode
+
+        if config.categorical_vocab_size_list is not None:
+            if config.decoder_mode == "common_channel":
+                # logger.warning("Setting decoder_mode to mix_channel as static categorical variables is available")
+                # config.decoder_mode = "mix_channel"
+                raise ValueError("set decoder_mode to mix_channel when using static categorical variables")
+
+            decoder_config.num_input_channels += len(config.categorical_vocab_size_list)
+            self.decoder_cat_embedding_layer = TinyTimeMixerCategoricalEmbeddingLayer(decoder_config)
+        else:
+            self.decoder_cat_embedding_layer = None
+
+        self.decoder_block = TinyTimeMixerBlock(decoder_config)
+
+        self.resolution_prefix_tuning = config.resolution_prefix_tuning
+
+    def forward(
+        self,
+        hidden_state,
+        patch_input,
+        output_hidden_states: bool = False,
+        static_categorical_values: Optional[torch.Tensor] = None,
+    ):
+        """
+        Args:
+            hidden_state (`torch.Tensor` of shape `(batch_size x nvars x num_patch x d_model)`): The input tensor from backbone.
+            output_hidden_states (`bool`, *optional*, defaults to False.):
+                Whether to output the hidden states as well.
+
+            static_categorical_values (`torch.FloatTensor` of shape `(batch_size, number_of_categorical_variables)`, *optional*):
+            Tokenized categorical values can be passed here. Ensure to pass in the same order as the vocab size list used in the
+            TinyTimeMixerConfig param `categorical_vocab_size_list`
+
+        Returns:
+            `torch.Tensor`: The embedding. `list`: List of all hidden states if `output_hidden_states` is set to
+            `True`.
+        """
+        if output_hidden_states:
+            decoder_hidden_states = []
+        else:
+            decoder_hidden_states = None
+
+        decoder_input = hidden_state
+
+        if self.adapter is not None:
+            decoder_input = self.adapter(
+                hidden_state
+            )  # model_output: [batch_size x nvars x num_patch x decoder_d_model]
+            if output_hidden_states:
+                decoder_hidden_states.append(decoder_input)
+
+        if self.decoder_raw_residual:
+            if self.resolution_prefix_tuning:
+                if patch_input.shape[-2] == decoder_input.shape[-2] - 1:
+                    temp_shape = list(patch_input.shape)
+                    temp_shape[-2] = 1
+                    temp_zeros = torch.zeros(*temp_shape).to(patch_input.device)
+                    patch_input = torch.cat([temp_zeros, patch_input], dim=-2)
+
+            decoder_input = decoder_input + self.decoder_raw_embedding(
+                patch_input
+            )  # [batch_size x nvars x num_patch x decoder_d_model]
+            if output_hidden_states:
+                decoder_hidden_states.append(decoder_input)
+
+        if self.decoder_cat_embedding_layer is not None:
+            if static_categorical_values is None:
+                raise ValueError("Missing static_categorical_values tensor in forward call")
+            cat_embeddings = self.decoder_cat_embedding_layer(
+                static_categorical_values
+            )  # bs x n_cat x n_patches x d_model
+
+            decoder_input = torch.concat(
+                (decoder_input, cat_embeddings), dim=1
+            )  # bs x nvars+n_cat x n_patches x d_model
+
+        decoder_output, hidden_states = self.decoder_block(
+            hidden_state=decoder_input, output_hidden_states=output_hidden_states
+        )  # bs x nvars+n_cat x n_patches x d_model
+
+        if output_hidden_states:
+            decoder_hidden_states.extend(hidden_states)
+
+        if self.decoder_cat_embedding_layer is not None:
+            decoder_output = decoder_output[:, : self.num_input_channels, :, :]  # bs x nvars x n_patches x d_model
+            if output_hidden_states:
+                decoder_hidden_states.append(decoder_output)
+
+        return decoder_output, decoder_hidden_states
 
 
 class TinyTimeMixerDecoder(nn.Module):

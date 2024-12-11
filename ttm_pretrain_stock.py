@@ -39,7 +39,7 @@ logger = logging.getLogger(__file__)
 # Basic usage:
 # python ttm_pretrain_sample.py --data_root_path datasets/
 # See the get_ttm_args() function to know more about other TTM arguments
-resume=False
+resume=True
 
 def get_base_model(args):
     # Pre-train a `TTM` forecasting model
@@ -83,7 +83,7 @@ def pretrain(args, model, dset_train, dset_val):
     )
     # learning_rate = args.learning_rate
     last_checkpoint = None
-    if os.path.exists(os.path.join(args.save_dir, "checkpoint") and resume):
+    if os.path.exists(os.path.join(args.save_dir, "checkpoint")) and resume:
         last_checkpoint = get_last_checkpoint(os.path.join(args.save_dir, "checkpoint"))
     
 
@@ -256,7 +256,7 @@ if __name__ == "__main__":
         df.dropna(inplace=True)
         df['stock_id']=file.stem
         # 将处理后的数据框添加到列表中
-        df = df[df['date'] >= datetime(2009, 1, 1)]
+        # df = df[df['date'] >= datetime(2009, 1, 1)]
 
         dfs.append(df)
 
@@ -293,6 +293,6 @@ if __name__ == "__main__":
 
     # inference
 
-    inference(args=args, model_path=model_save_path, dset_test=dset_test)
+    # inference(args=args, model_path=model_save_path, dset_test=dset_test)
 
     print("inference completed..")

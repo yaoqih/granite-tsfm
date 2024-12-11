@@ -654,10 +654,10 @@ class ForecastDFDataset(BaseConcatDFDataset):
                 ]
 
             return ret
-        def revert_scaling(self, tsp):
+        def revert_scaling(self, tsp,group_id):
             df=self.data_df.copy()
-            df=inverse_transform_selected_columns(df, tsp.scaler_dict['0'])
-            df=inverse_transform_selected_columns(df, tsp.target_scaler_dict['0'])
+            df=inverse_transform_selected_columns(df, tsp.scaler_dict[group_id])
+            df=inverse_transform_selected_columns(df, tsp.target_scaler_dict[group_id])
             return df
 
         def __len__(self):

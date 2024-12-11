@@ -174,7 +174,7 @@ class TinyTimeMixerConfig(PretrainedConfig):
         mode: str = "common_channel",
         gated_attn: bool = True,
         norm_mlp: str = "LayerNorm",
-        self_attn: bool = True,
+        self_attn: bool = False,
         self_attn_heads: int = 1,
         use_positional_encoding: bool = True,
         positional_encoding_type: str = "sincos",
