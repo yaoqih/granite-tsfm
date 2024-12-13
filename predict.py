@@ -34,7 +34,7 @@ id_columns = ['stock_id']  # mention the ids that uniquely identify a time-serie
 target_columns = ['change_rate']
 conditional_columns=['open','high','low','close','volume','amount','amplitude','pct_chg','change','turnover_rate']
 
-parquet_files = list(Path(data_path).glob('*.parquet'))
+parquet_files = list(Path(data_path).glob('*.parquet'))[:10]
 
 # 创建一个空列表来存储所有数据框
 dfs = []
@@ -81,7 +81,7 @@ tsp = TimeSeriesPreprocessor(
 )
 
 dset_train, dset_valid, dset_test = get_datasets(tsp, final_df,split_config = {"train": '2023-01-01', "test": '2024-01-01'})
-TTM_MODEL_PATH = "/root/granite-tsfm/tmp/TTM_cl-32_fl-1_pl-16_apl-6_ne-30_es-True/checkpoint/checkpoint-224160"
+TTM_MODEL_PATH = "/root/granite-tsfm/tmp/TTM_cl-32_fl-1_pl-16_apl-6_ne-30_es-True/checkpoint/checkpoint-44832"
 
 zeroshot_model = get_model(
     TTM_MODEL_PATH,
@@ -160,7 +160,7 @@ def custom_predict(model, dataset):
  
     
     return predictions
-for dataset_spilt,save_name in zip([dset_valid,dset_test],['valid','test']):
+for dataset_spilt,save_name in zip([dset_test],['test']):
     # print(trainer.evaluate(dataset))
     context_length=trainer.model.config.context_length
     # predictions_dict = trainer.predict(dataset_spilt)
@@ -168,30 +168,20 @@ for dataset_spilt,save_name in zip([dset_valid,dset_test],['valid','test']):
     dfs=[]
     count=0
     for dataset in tqdm(dataset_spilt.datasets,save_name):
-        iterator = BatchIterator(dataset, batch_size)
-        flattened_array = custom_predict(trainer.model, iterator)
+        # iterator = BatchIterator(dataset, batch_size)
+        flattened_array = custom_predict(trainer.model, dataset.get_last())
         # flattened_array = predictions_dict.predictions[0][:,:,0].flatten()  # 变成一维数组，长度为324
-        df=dataset.revert_scaling(tsp,dataset.group_id[0])
-        additional_elements = np.zeros(context_length)  # 或者其他你想要的值
+        df=dataset.revert_scaling(tsp,dataset.group_id[0]).iloc[-1:,:]
+        # additional_elements = np.zeros(context_length)  # 或者其他你想要的值
         # final_array = np.concatenate([additional_elements, flattened_array[count:count+len(df)-context_length]])
-        final_array = np.concatenate([additional_elements, flattened_array])
+        # final_array = np.concatenate([additional_elements, flattened_array])
         # count+=len(df)-context_length
-        df['predict'] = final_array*tsp.target_scaler_dict[dataset.group_id[0]].scale_+tsp.target_scaler_dict[dataset.group_id[0]].mean_
+        df['predict'] = flattened_array*tsp.target_scaler_dict[dataset.group_id[0]].scale_+tsp.target_scaler_dict[dataset.group_id[0]].mean_
         # df = df.drop(columns=['group'])
-        df= df.iloc[context_length:]
         # reset_index 可以将结果的索引重置为默认的整数索引
         df.reset_index(drop=True, inplace=True)
         dfs.append(df)
 
     final_df = pd.concat(dfs, ignore_index=True)
-    final_df.to_csv(f"zero_shot_{save_name}.csv", index=False)  # 保存为Excel文件
+    final_df.to_csv(f"final_predict_{save_name}.csv", index=False)  # 保存为Excel文件
 
-    grouped = final_df.groupby('date')
-    ids=[]
-    for id,group in grouped:
-        if len(group)>1000:
-            id_=group['predict'].idxmax()
-            ids.append(id_)
-    result = final_df.loc[ids]
-    # 将结果保存到Excel文件
-    result.to_excel(f'highest_predict_{save_name}.xlsx', index=False)

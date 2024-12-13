@@ -654,6 +654,51 @@ class ForecastDFDataset(BaseConcatDFDataset):
                 ]
 
             return ret
+        def get_last(self):
+            # seq_x: batch_size x seq_len x num_x_cols
+            index= len(self)
+            time_id = index * self.stride
+
+            seq_x = self.X[time_id : time_id + self.context_length].values.astype(np.float32)
+            if not self.autoregressive_modeling:
+                seq_x[:, self.x_mask_targets] = 0
+
+            if self.masking_specification is not None:
+                seq_x = self.apply_masking_specification(seq_x)
+
+            # seq_y: batch_size x pred_len x num_x_cols
+            # seq_y = self.y[
+            #     time_id + self.context_length : time_id + self.context_length + self.prediction_length
+            # ].values
+            # seq_y[:, self.y_mask_conditional] = 0
+
+            ret = {
+                "past_values": np_to_torch(np.nan_to_num(seq_x, nan=self.fill_value)).unsqueeze(0),
+                # "future_values": np_to_torch(np.nan_to_num(seq_y, nan=self.fill_value)),
+                "past_observed_mask": np_to_torch(~np.isnan(seq_x)).unsqueeze(0),
+                # "future_observed_mask": np_to_torch(~np.isnan(seq_y)),
+            }
+
+            if self.datetime_col:
+                ret["timestamp"] = self.timestamps[time_id + self.context_length - 1]
+
+            if self.group_id:
+                ret["id"] = self.group_id
+
+            if self.frequency_token is not None:
+                ret["freq_token"] = torch.tensor(self.frequency_token, dtype=torch.int)
+
+            if self.static_categorical_columns:
+                categorical_values = self.data_df[self.static_categorical_columns].values[0, :]
+                ret["static_categorical_values"] = np_to_torch(categorical_values)
+
+            if self.metadata_columns:
+                ret["metadata"] = self.data_df[self.metadata_columns].values[
+                    time_id : time_id + self.context_length + self.prediction_length, :
+                ]
+
+            return [ret]
+
         def revert_scaling(self, tsp,group_id):
             df=self.data_df.copy()
             df=inverse_transform_selected_columns(df, tsp.scaler_dict[group_id])

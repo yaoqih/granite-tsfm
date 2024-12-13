@@ -806,20 +806,20 @@ class TinyTimeMixerLayer(nn.Module):
             `torch.Tensor`: Transformed tensor.
         """
         if self.mode == "mix_channel":
-            residual = hidden
+            # residual = hidden
             hidden = self.channel_feature_mixer(hidden)
-            hidden = (hidden + residual)/2  # 残差连接
+            # hidden = (hidden + residual)/2  # 残差连接
 
         # 在 patch_mixer 前后添加残差连接
         if self.num_patches > 1:
-            residual = hidden
+            # residual = hidden
             hidden = self.patch_mixer(hidden)
-            hidden = (hidden + residual)/2  # 残差连接
+            # hidden = (hidden + residual)/2  # 残差连接
 
         # 在 feature_mixer 前后添加残差连接
-        residual = hidden
+        # residual = hidden
         hidden = self.feature_mixer(hidden)
-        hidden = (hidden + residual)/2  # 残差连接
+        # hidden = (hidden + residual)/2  # 残差连接
 
         return hidden
 

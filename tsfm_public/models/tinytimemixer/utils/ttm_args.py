@@ -127,7 +127,7 @@ def get_ttm_args():
         "-es",
         type=int,
         required=False,
-        default=1,
+        default=0,
         help="Whether to use early stopping during finetuning.",
     )
     parser.add_argument(

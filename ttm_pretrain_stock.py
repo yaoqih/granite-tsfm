@@ -25,6 +25,140 @@ from pathlib import Path
 from tqdm import tqdm
 from transformers.trainer_utils import get_last_checkpoint
 from datetime import datetime
+from transformers import TrainerCallback
+import numpy as np
+import torch
+from collections import defaultdict
+
+class BatchIterator:
+    def __init__(self, dataset, batch_size):
+        self.dataset = dataset
+        self.batch_size = batch_size
+        self.current_index = 0
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.current_index >= len(self.dataset):
+            raise StopIteration
+
+        batch = defaultdict(list)
+        for i in range(self.current_index, min(self.current_index + self.batch_size, len(self.dataset))):
+            item = self.dataset[i]
+            for key, value in item.items():
+                batch[key].append(value)
+
+        self.current_index += self.batch_size
+
+        # Process the batch
+        processed_batch = {}
+        for key, values in batch.items():
+            if isinstance(values[0], torch.Tensor):
+                processed_batch[key] = torch.stack(values).to(self.device)
+            elif isinstance(values[0], datetime):
+                processed_batch[key] = values
+            elif isinstance(values[0], tuple):
+                processed_batch[key] = [item for sublist in values for item in sublist]
+            else:
+                processed_batch[key] = values
+
+        return processed_batch
+
+def custom_predict(model, dataset):
+    model.eval()
+    predictions = []
+    
+    # dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+    
+    with torch.no_grad():
+        for batch in dataset:
+            # Move batch to the same device as the model
+            batch = {k: v.to(model.device) for k, v in batch.items() if type(v) == torch.Tensor}
+            
+            # Get predictions
+            outputs = model(**batch)
+            
+            # Assuming you want logits, adjust as needed
+            batch_predictions = outputs.prediction_outputs[:,:,0].flatten().cpu().numpy()
+            predictions.extend(batch_predictions)
+ 
+    
+    return predictions
+def calculate_max_drawdown_simple(prices):
+    """
+    计算最大回撤的简化版本
+    :param prices: 价格序列列表
+    :return: 最大回撤比例
+    """
+    if not prices:
+        return 0
+        
+    max_drawdown = 0
+    peak = prices[0]
+    
+    for price in prices:
+        if price > peak:
+            peak = price
+        else:
+            drawdown = (peak - price) / peak
+            max_drawdown = max(max_drawdown, drawdown)
+            
+    return max_drawdown
+class CustomCallback(TrainerCallback):
+    def __init__(self, data_valid, data_test, model_save_path,batch_size=32, **kwargs):
+        self.data_valid = data_valid
+        self.data_test = data_test
+        self.model_save_path = model_save_path
+        self.batch_size=batch_size
+        
+    def on_save(self, args, state, control, **kwargs):
+        # 在每个epoch结束时调用自定义函数
+        results_all=[state.epoch]
+        for dataset_spilt,save_name in zip([self.data_valid,self.data_test],['valid','test']):
+            # print(trainer.evaluate(dataset))
+            context_length=kwargs['model'].config.context_length
+            # predictions_dict = trainer.predict(dataset_spilt)
+            # flattened_array = predictions_dict.predictions[0][:,:,0].flatten()  # 变成一维数组，长度为324
+            dfs=[]
+            count=0
+            for dataset in tqdm(dataset_spilt.datasets,save_name):
+                iterator = BatchIterator(dataset, self.batch_size)
+                flattened_array = custom_predict(kwargs['model'], iterator)
+                # flattened_array = predictions_dict.predictions[0][:,:,0].flatten()  # 变成一维数组，长度为324
+                df=dataset.revert_scaling(tsp,dataset.group_id[0])
+                additional_elements = np.zeros(context_length)  # 或者其他你想要的值
+                # final_array = np.concatenate([additional_elements, flattened_array[count:count+len(df)-context_length]])
+                final_array = np.concatenate([additional_elements, flattened_array])
+                # count+=len(df)-context_length
+                df['predict'] = final_array*tsp.target_scaler_dict[dataset.group_id[0]].scale_+tsp.target_scaler_dict[dataset.group_id[0]].mean_
+                # df = df.drop(columns=['group'])
+                df= df.iloc[context_length:]
+                # reset_index 可以将结果的索引重置为默认的整数索引
+                df.reset_index(drop=True, inplace=True)
+                dfs.append(df)
+            
+            final_df = pd.concat(dfs, ignore_index=True)
+            grouped = final_df.groupby('date')
+            ids=[]
+            for id,group in grouped:
+                if len(group)>1000:
+                    id_=group['predict'].idxmax()
+                    ids.append(id_)
+            result = final_df.loc[ids]
+            results_all.append(result['change_rate'].mean())
+            prices=[1]
+            for i in range(1,len(result)):
+                prices.append(prices[-1]*(1+result.iloc[i]['change_rate']))
+            results_all.append(calculate_max_drawdown_simple(prices))
+            results_all.append(result['change_rate'].std())
+            results_all.append(prices[-1])
+        open(os.path.join(self.model_save_path,'result.csv'),'a').write(','.join([str(i) for i in results_all])+'\n')
+            # 将结果保存到Excel文件
+    def on_train_begin(self, args, state, control, **kwargs):
+        if not os.path.exists(os.path.join(self.model_save_path,'result.csv')):        
+            open(os.path.join(self.model_save_path,'result.txt'),'w').write('epoch,valid_mean,valid_max_drawdown,valid_std,valid_end_price,test_mean,test_max_drawdown,test_std,test_end_price\n')
 
 logger = logging.getLogger(__file__)
 # TTM pre-training example.
@@ -104,7 +238,7 @@ def pretrain(args, model, dset_train, dset_val):
         report_to="tensorboard",
         save_strategy="epoch",
         logging_strategy="epoch",
-        save_total_limit=3,
+        save_total_limit=None,
         logging_dir=os.path.join(args.save_dir, "logs"),  # Make sure to specify a logging directory
         load_best_model_at_end=True,  # Load the best model when training ends
         metric_for_best_model="eval_loss",  # Metric to monitor for early stopping
@@ -127,7 +261,7 @@ def pretrain(args, model, dset_train, dset_val):
         early_stopping_patience=10,  # Number of epochs with no improvement after which to stop
         early_stopping_threshold=0.0,  # Minimum improvement required to consider as improvement
     )
-
+    customcallback=CustomCallback(data_valid=dset_val,data_test=dset_test,model_save_path=args.save_dir,batch_size=args.batch_size)
     # Set trainer
     if args.early_stopping:
         trainer = Trainer(
@@ -136,7 +270,7 @@ def pretrain(args, model, dset_train, dset_val):
             train_dataset=dset_train,
             eval_dataset=dset_val,
             optimizers=(optimizer, scheduler),
-            callbacks=[early_stopping_callback],
+            callbacks=[early_stopping_callback,customcallback],
         )
     else:
         trainer = Trainer(
@@ -145,6 +279,7 @@ def pretrain(args, model, dset_train, dset_val):
             train_dataset=dset_train,
             eval_dataset=dset_val,
             optimizers=(optimizer, scheduler),
+            # callbacks=[customcallback],
         )
 
     # Train
@@ -281,10 +416,11 @@ if __name__ == "__main__":
         scaler_type="standard",
     )
 
-    dset_train, dset_valid, dset_test = get_datasets(tsp, final_df,split_config = {"train": '2022-01-01', "test": '2023-01-01'})
+    dset_train, dset_valid, dset_test = get_datasets(tsp, final_df,split_config = {"train": '2023-01-01', "test": '2024-01-01'})
 
     # Get model
     model = get_base_model(args)
+    # open('model.txt','w').write(str(model))
     # print(model)
     # Pretrain
     model_save_path = pretrain(args, model, dset_train, dset_valid)
