@@ -380,7 +380,8 @@ if __name__ == "__main__":
 
     target_columns = ['change_rate']
     conditional_columns=['open','high','low','close','volume','amount','amplitude','pct_chg','change','turnover_rate']
-
+    # conditional_columns=['open', 'close', 'high', 'low', 'volume', 'amount', 'amplitude', 'pct_chg', 'change', 'turnover_rate', 'CDL3OUTSIDE', 'CDLADVANCEBLOCK', 'CDLBELTHOLD', 'CDLCLOSINGMARUBOZU', 'CDLDARKCLOUDCOVER', 'CDLDOJI', 'CDLDOJISTAR', 'CDLDRAGONFLYDOJI', 'CDLENGULFING', 'CDLGRAVESTONEDOJI', 'CDLHAMMER', 'CDLHANGINGMAN', 'CDLHARAMI', 'CDLHARAMICROSS', 'CDLHIGHWAVE', 'CDLHIKKAKE', 'CDLHOMINGPIGEON', 'CDLINVERTEDHAMMER', 'CDLLONGLEGGEDDOJI', 'CDLLONGLINE', 'CDLMARUBOZU', 'CDLMATCHINGLOW', 'CDLMORNINGSTAR', 'CDLPIERCING', 'CDLRICKSHAWMAN', 'CDLSHOOTINGSTAR', 'CDLSHORTLINE', 'CDLSPINNINGTOP', 'CDLTAKURI', 'CDLTHRUSTING', 'DEMA', 'EMA', 'HT_TRENDLINE', 'KAMA', 'MA', 'MIDPOINT', 'MIDPRICE', 'SAR', 'SAREXT', 'SMA', 'T3', 'TEMA', 'TRIMA', 'WMA', 'ADX', 'ADXR', 'APO', 'AROONOSC', 'BOP', 'CCI', 'CMO', 'DX', 'MACDmacdhist', 'MACDmacdsignal', 'MACDmacd', 'MACDEXTmacdhist', 'MACDEXTmacdsignal', 'MACDEXTmacd', 'MACDFIXmacdhist', 'MACDFIXmacdsignal', 'MACDFIXmacd', 'MFI', 'MINUS_DI', 'MINUS_DM', 'PLUS_DI', 'PLUS_DM', 'PPO', 'ROC', 'ROCP', 'ROCR', 'ROCR100', 'RSI', 'TRIX', 'ULTOSC', 'WILLR', 'AD', 'ADOSC', 'OBV', 'ATR', 'NATR', 'TRANGE', 'AVGPRICE', 'MEDPRICE', 'TYPPRICE', 'WCLPRICE', 'HT_DCPERIOD', 'HT_DCPHASE', 'HT_PHASORquadrature', 'HT_PHASORinphase', 'HT_SINEleadsine', 'HT_SINEsine', 'STOCHslowd', 'STOCHslowk', 'STOCHFfastd', 'STOCHFfastk', 'STOCHRSIfastd', 'STOCHRSIfastk', 'AROONaroonup', 'AROONaroondown', 'BBANDSlowerband', 'BBANDSmiddleband', 'BBANDSupperband', 'BETA', 'CORREL', 'LINEARREG', 'LINEARREG_ANGLE', 'LINEARREG_INTERCEPT', 'LINEARREG_SLOPE', 'STDDEV', 'TSF', 'VAR']
+    
     # mention the train, valid and split config.
     # split_config = {
     #     "train": [0, 8640],
@@ -421,7 +422,6 @@ if __name__ == "__main__":
     # 合并所有数据框
     final_df = pd.concat(dfs, ignore_index=True)
 
-
     column_specifiers = {
         "timestamp_column": timestamp_column,
         "id_columns": id_columns,
@@ -440,7 +440,6 @@ if __name__ == "__main__":
     )
 
     dset_train, dset_valid, dset_test = get_datasets(tsp, final_df,split_config = {"train": '2022-01-01', "test": '2023-01-01'})
-
     # Get model
     model = get_base_model(args)
     # open('model.txt','w').write(str(model))
