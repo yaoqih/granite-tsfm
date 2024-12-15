@@ -652,6 +652,7 @@ class ForecastDFDataset(BaseConcatDFDataset):
                 ret["metadata"] = self.data_df[self.metadata_columns].values[
                     time_id : time_id + self.context_length + self.prediction_length, :
                 ]
+            ret['past_values'][-2:,0]=0
 
             return ret
         def get_last(self):

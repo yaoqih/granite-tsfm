@@ -233,6 +233,7 @@ def train_test_split(
     train: Union[int, float] = 0.7,
     test: Union[int, float] = 0.2,
     valid_test_offset: int = 0,
+    all_train: Optional[bool] = False,
 ):
     # to do: add validation
 
@@ -254,6 +255,7 @@ def train_test_split(
                 train=train,
                 test=test,
                 valid_test_offset=valid_test_offset,
+                all_train=all_train,
             )
         )
 
@@ -267,6 +269,7 @@ def _split_group_train_test(
     train: Union[int, float] = 0.7,
     test: Union[int, float] = 0.2,
     valid_test_offset: int = 0,
+    all_train: Optional[bool]=False,
 ):
     l = len(group_df)
     if type(train) == float:
@@ -277,6 +280,9 @@ def _split_group_train_test(
         train_size = len(group_df[group_df['date']<train])
         valid_size = len(group_df[group_df['date']<test])-train_size
         test_size= l - train_size - valid_size
+        if all_train:
+            train_size=  l
+        
 
 
 
@@ -1055,7 +1061,7 @@ def convert_tsfile_to_dataframe(
         raise IOError("empty file")
 
 
-def get_split_params(
+def  get_split_params(
     split_config: Dict[str, Union[float, List[Union[int, float]]]],
     context_length: Optional[int] = None,
 ) -> Tuple[Dict[str, Dict[str, Union[int, float]]], Dict[str, Callable]]:

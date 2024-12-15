@@ -743,6 +743,7 @@ def prepare_data_splits(
     id_columns: List[str] = [],
     context_length: int = 64,
     split_config: Dict[str, Union[List[Union[int, float]], float]] = {"train": 0.7, "test": 0.2},
+    all_train: bool = False,
 ) -> Tuple[pd.DataFrame]:
     """Splits the input dataframe according to the split_config.
 
@@ -778,7 +779,7 @@ def prepare_data_splits(
         valid_data = split_function["valid"](data, id_columns=id_columns, **split_params["valid"])
         test_data = split_function["test"](data, id_columns=id_columns, **split_params["test"])
     else:
-        train_data, valid_data, test_data = split_function(data, id_columns=id_columns, **split_params)
+        train_data, valid_data, test_data = split_function(data, id_columns=id_columns,all_train=all_train, **split_params)
 
     return train_data, valid_data, test_data
 
@@ -794,6 +795,7 @@ def get_datasets(
     use_frequency_token: bool = False,
     enable_padding: bool = True,
     seed: int = 42,
+    all_train: bool = False,
     **dataset_kwargs,
 ) -> Tuple[Any]:
     """Creates the preprocessed pytorch datasets needed for training and evaluation
@@ -853,6 +855,7 @@ def get_datasets(
         id_columns=ts_preprocessor.id_columns,
         context_length=ts_preprocessor.context_length,
         split_config=split_config,
+        all_train=all_train,
     )
 
     # data preprocessing

@@ -26,6 +26,8 @@ from datetime import datetime
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
+from ttm_pretrain_stock import calculate_max_drawdown_simple,BatchIterator,custom_predict
+from scipy import stats
 
 data_path='./origin_data'
 timestamp_column = "date"
@@ -81,7 +83,7 @@ tsp = TimeSeriesPreprocessor(
 )
 
 dset_train, dset_valid, dset_test = get_datasets(tsp, final_df,split_config = {"train": '2023-01-01', "test": '2024-01-01'})
-TTM_MODEL_PATH = "/root/granite-tsfm/tmp/TTM_cl-32_fl-1_pl-16_apl-6_ne-30_es-True/checkpoint/checkpoint-224160"
+TTM_MODEL_PATH = "/root/granite-tsfm/model_save/TTM_cl-32_fl-1_pl-16_apl-6_ne-30_es-False/ttm_pretrained"
 
 zeroshot_model = get_model(
     TTM_MODEL_PATH,
@@ -104,78 +106,19 @@ from torch.utils.data import Dataset
 from collections import defaultdict
 from datetime import datetime
 
-class BatchIterator:
-    def __init__(self, dataset, batch_size):
-        self.dataset = dataset
-        self.batch_size = batch_size
-        self.current_index = 0
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    def __iter__(self):
-        return self
-
-    def __next__(self):
-        if self.current_index >= len(self.dataset):
-            raise StopIteration
-
-        batch = defaultdict(list)
-        for i in range(self.current_index, min(self.current_index + self.batch_size, len(self.dataset))):
-            item = self.dataset[i]
-            for key, value in item.items():
-                batch[key].append(value)
-
-        self.current_index += self.batch_size
-
-        # Process the batch
-        processed_batch = {}
-        for key, values in batch.items():
-            if isinstance(values[0], torch.Tensor):
-                processed_batch[key] = torch.stack(values).to(self.device)
-            elif isinstance(values[0], datetime):
-                processed_batch[key] = values
-            elif isinstance(values[0], tuple):
-                processed_batch[key] = [item for sublist in values for item in sublist]
-            else:
-                processed_batch[key] = values
-
-        return processed_batch
-
-def custom_predict(model, dataset):
-    model.eval()
-    predictions = []
-    
-    # dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
-    
-    with torch.no_grad():
-        for batch in dataset:
-            # Move batch to the same device as the model
-            batch = {k: v.to(model.device) for k, v in batch.items() if type(v) == torch.Tensor}
-            
-            # Get predictions
-            outputs = model(**batch)
-            
-            # Assuming you want logits, adjust as needed
-            batch_predictions = outputs.prediction_outputs[:,:,0].flatten().cpu().numpy()
-            predictions.extend(batch_predictions)
- 
-    
-    return predictions
+dfs=[]
 for dataset_spilt,save_name in zip([dset_valid,dset_test],['valid','test']):
     # print(trainer.evaluate(dataset))
     context_length=trainer.model.config.context_length
     # predictions_dict = trainer.predict(dataset_spilt)
     # flattened_array = predictions_dict.predictions[0][:,:,0].flatten()  # 变成一维数组，长度为324
-    dfs=[]
-    count=0
     for dataset in tqdm(dataset_spilt.datasets,save_name):
         iterator = BatchIterator(dataset, batch_size)
         flattened_array = custom_predict(trainer.model, iterator)
         # flattened_array = predictions_dict.predictions[0][:,:,0].flatten()  # 变成一维数组，长度为324
         df=dataset.revert_scaling(tsp,dataset.group_id[0])
         additional_elements = np.zeros(context_length)  # 或者其他你想要的值
-        # final_array = np.concatenate([additional_elements, flattened_array[count:count+len(df)-context_length]])
         final_array = np.concatenate([additional_elements, flattened_array])
-        # count+=len(df)-context_length
         df['predict'] = final_array*tsp.target_scaler_dict[dataset.group_id[0]].scale_+tsp.target_scaler_dict[dataset.group_id[0]].mean_
         # df = df.drop(columns=['group'])
         df= df.iloc[context_length:]
@@ -183,15 +126,40 @@ for dataset_spilt,save_name in zip([dset_valid,dset_test],['valid','test']):
         df.reset_index(drop=True, inplace=True)
         dfs.append(df)
 
-    final_df = pd.concat(dfs, ignore_index=True)
-    final_df.to_csv(f"zero_shot_{save_name}.csv", index=False)  # 保存为Excel文件
+final_df = pd.concat(dfs, ignore_index=True)
+# final_df.to_csv(f"zero_shot_{save_name}.csv", index=False)  # 保存为Excel文件
 
-    grouped = final_df.groupby('date')
-    ids=[]
-    for id,group in grouped:
-        if len(group)>1000:
-            id_=group['predict'].idxmax()
-            ids.append(id_)
-    result = final_df.loc[ids]
-    # 将结果保存到Excel文件
-    result.to_excel(f'highest_predict_{save_name}.xlsx', index=False)
+grouped = final_df.groupby('date')
+ids=[]
+for id,group in grouped:
+    if len(group)>1000:
+        id_=group['predict'].idxmax()
+        ids.append(id_)
+result = final_df.loc[ids]
+# 将结果保存到Excel文件
+# result.to_excel(f'highest_predict_{save_name}.xlsx', index=False)
+print(f'{save_name}_mean',result['change_rate'].mean())
+prices=[1]
+for i in range(len(result)):
+    prices.append(prices[-1]*(1+result.iloc[i]['change_rate']))
+print(f'{save_name}_max_drawdown',calculate_max_drawdown_simple(prices))
+print(f'{save_name}_std',result['change_rate'].std())
+print(f'{save_name}_end_price',prices[-1])
+
+df_sorted = result.sort_values(by='predict', ascending=False)
+# 2. 最小二乘法拟合
+x = np.arange(len(df_sorted))  # x轴为索引
+y = df_sorted['change_rate'].values  # y轴为change_rate值
+# 进行线性拟合
+slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
+# 拟合方程: y = slope * x + intercept
+# 3. 计算y=0时的x值
+x_zero = -intercept / slope
+
+# 4. 找到最接近的且大于0的点
+x_nearest = int(x_zero) if int(x_zero)*slope+intercept>0 else int(x_zero) - 1
+x_nearest = min(max(0, x_nearest), len(df_sorted) - 1)
+
+# 获取对应的predict值
+result_predict = df_sorted.iloc[x_nearest]['predict']
+print(f'{save_name}_trand_point',result_predict)

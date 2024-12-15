@@ -26,7 +26,7 @@ from datetime import datetime
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
-
+import akshare as ak
 data_path='./origin_data'
 timestamp_column = "date"
 id_columns = ['stock_id']  # mention the ids that uniquely identify a time-series.
@@ -52,7 +52,8 @@ for file in tqdm(parquet_files,'reading parquet files'):
         df['low'] += 1
         df['close'] += 1
     df['change_rate']=(df['open'].shift(-2)-df['open'].shift(-1))/(df['open'].shift(-1))
-    df.dropna(inplace=True)
+    # df.dropna(inplace=True)
+    df.fillna(0,inplace=True)
     df['stock_id']=file.stem
     # 将处理后的数据框添加到列表中
     # df = df[df['date'] >= datetime(2009, 1, 1)]
@@ -81,7 +82,7 @@ tsp = TimeSeriesPreprocessor(
 )
 
 dset_train, dset_valid, dset_test = get_datasets(tsp, final_df,split_config = {"train": '2023-01-01', "test": '2024-01-01'})
-TTM_MODEL_PATH = "/root/granite-tsfm/tmp/TTM_cl-32_fl-1_pl-16_apl-6_ne-30_es-True/checkpoint/checkpoint-44832"
+TTM_MODEL_PATH = "/root/granite-tsfm/model_save/TTM_cl-32_fl-1_pl-16_apl-6_ne-30_es-False/ttm_pretrained"
 
 zeroshot_model = get_model(
     TTM_MODEL_PATH,
@@ -172,6 +173,7 @@ for dataset_spilt,save_name in zip([dset_test],['test']):
         flattened_array = custom_predict(trainer.model, dataset.get_last())
         # flattened_array = predictions_dict.predictions[0][:,:,0].flatten()  # 变成一维数组，长度为324
         df=dataset.revert_scaling(tsp,dataset.group_id[0]).iloc[-1:,:]
+        
         # additional_elements = np.zeros(context_length)  # 或者其他你想要的值
         # final_array = np.concatenate([additional_elements, flattened_array[count:count+len(df)-context_length]])
         # final_array = np.concatenate([additional_elements, flattened_array])
@@ -181,7 +183,17 @@ for dataset_spilt,save_name in zip([dset_test],['test']):
         # reset_index 可以将结果的索引重置为默认的整数索引
         df.reset_index(drop=True, inplace=True)
         dfs.append(df)
-
     final_df = pd.concat(dfs, ignore_index=True)
-    final_df.to_csv(f"final_predict_{save_name}.csv", index=False)  # 保存为Excel文件
+    final_df=final_df[['stock_id','date','predict']]
+    final_df['code'] = final_df['stock_id'].str[-6:]
+    df2=ak.stock_info_a_code_name()
+    # 2. 使用merge函数将df1和df2合并
+    final_df = final_df.merge(df2[['code', 'name']], 
+                    on='code',  # 使用code列作为合并键
+                    how='left'  # 使用左连接保留df1的所有记录
+                )
+
+    # 3. 如果不再需要临时创建的code列，可以删除
+    final_df = final_df.drop('code', axis=1)
+    final_df.to_csv(f"./predict_result/{final_df['date'][0]}.csv", index=False)  # 保存为Excel文件
 

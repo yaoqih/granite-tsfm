@@ -152,3 +152,6 @@ ETTh1_2.csv
 /*.csv
 /*.xlsx
 exp
+
+model_save
+basic_data

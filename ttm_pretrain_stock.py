@@ -29,6 +29,8 @@ from transformers import TrainerCallback
 import numpy as np
 import torch
 from collections import defaultdict
+from scipy import stats
+
 
 class BatchIterator:
     def __init__(self, dataset, batch_size):
@@ -149,16 +151,35 @@ class CustomCallback(TrainerCallback):
             result = final_df.loc[ids]
             results_all.append(result['change_rate'].mean())
             prices=[1]
-            for i in range(1,len(result)):
+            for i in range(len(result)):
                 prices.append(prices[-1]*(1+result.iloc[i]['change_rate']))
             results_all.append(calculate_max_drawdown_simple(prices))
             results_all.append(result['change_rate'].std())
             results_all.append(prices[-1])
+
+            df_sorted = result.sort_values(by='predict', ascending=False)
+            # 2. 最小二乘法拟合
+            x = np.arange(len(df_sorted))  # x轴为索引
+            y = df_sorted['change_rate'].values  # y轴为change_rate值
+            # 进行线性拟合
+            slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
+            # 拟合方程: y = slope * x + intercept
+            # 3. 计算y=0时的x值
+            x_zero = -intercept / slope
+
+            # 4. 找到最接近的且大于0的点
+            x_nearest = int(x_zero) if int(x_zero)*slope+intercept>0 else int(x_zero) - 1
+            x_nearest = min(max(0, x_nearest), len(df_sorted) - 1)
+
+            # 获取对应的predict值
+            result_predict = df_sorted.iloc[x_nearest]['predict']
+            results_all.append(result_predict)
+
         open(os.path.join(self.model_save_path,'result.csv'),'a').write(','.join([str(i) for i in results_all])+'\n')
             # 将结果保存到Excel文件
     def on_train_begin(self, args, state, control, **kwargs):
         if not os.path.exists(os.path.join(self.model_save_path,'result.csv')):        
-            open(os.path.join(self.model_save_path,'result.txt'),'w').write('epoch,valid_mean,valid_max_drawdown,valid_std,valid_end_price,test_mean,test_max_drawdown,test_std,test_end_price\n')
+            open(os.path.join(self.model_save_path,'result.csv'),'w').write('epoch,valid_mean,valid_max_drawdown,valid_std,valid_end_price,valid_trand_point,test_mean,test_max_drawdown,test_std,test_end_price,test_trand_point\n')
 
 logger = logging.getLogger(__file__)
 # TTM pre-training example.
@@ -279,7 +300,7 @@ def pretrain(args, model, dset_train, dset_val):
             train_dataset=dset_train,
             eval_dataset=dset_val,
             optimizers=(optimizer, scheduler),
-            # callbacks=[customcallback],
+            callbacks=[customcallback],
         )
 
     # Train
@@ -353,7 +374,7 @@ if __name__ == "__main__":
     # Data prep
     # Dataset
     # TARGET_DATASET = "etth1"
-    data_path='./origin_data'
+    data_path='./basic_data'
     timestamp_column = "date"
     id_columns = ['stock_id']  # mention the ids that uniquely identify a time-series.
 
@@ -379,6 +400,8 @@ if __name__ == "__main__":
     for file in tqdm(parquet_files,'reading parquet files'):
         # 读取parquet文件
         df = pd.read_parquet(file)
+        if len(df)<800:
+            continue
         
         # 将date列转换为datetime类型
         df[timestamp_column] = pd.to_datetime(df[timestamp_column])
@@ -416,7 +439,7 @@ if __name__ == "__main__":
         scaler_type="standard",
     )
 
-    dset_train, dset_valid, dset_test = get_datasets(tsp, final_df,split_config = {"train": '2023-01-01', "test": '2024-01-01'})
+    dset_train, dset_valid, dset_test = get_datasets(tsp, final_df,split_config = {"train": '2022-01-01', "test": '2023-01-01'})
 
     # Get model
     model = get_base_model(args)
