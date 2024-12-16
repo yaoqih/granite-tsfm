@@ -280,22 +280,24 @@ def _split_group_train_test(
         train_size = len(group_df[group_df['date']<train])
         valid_size = len(group_df[group_df['date']<test])-train_size
         test_size= l - train_size - valid_size
-        if all_train:
-            train_size=  l
         
+    if all_train:
+        train_df=_split_group_by_index(group_df, name, start_index=0)
+        valid_df =_split_group_by_index(group_df, name, start_index=len(group_df[group_df['date']<train])-valid_test_offset, end_index= len(group_df[group_df['date']<test])-valid_test_offset)
+        test_df =_split_group_by_index(group_df, name, start_index=len(group_df[group_df['date']<test])-valid_test_offset)
+        
+        
+    else:
+        train_df = _split_group_by_index(group_df, name, start_index=0, end_index=train_size)
 
+        valid_df = _split_group_by_index(
+            group_df,
+            name,
+            start_index=train_size - valid_test_offset,
+            end_index=train_size + valid_size,
+        )
 
-
-    train_df = _split_group_by_index(group_df, name, start_index=0, end_index=train_size)
-
-    valid_df = _split_group_by_index(
-        group_df,
-        name,
-        start_index=train_size - valid_test_offset,
-        end_index=train_size + valid_size,
-    )
-
-    test_df = _split_group_by_index(group_df, name, start_index=train_size + valid_size - valid_test_offset)
+        test_df = _split_group_by_index(group_df, name, start_index=train_size + valid_size - valid_test_offset)
 
     return train_df, valid_df, test_df
 

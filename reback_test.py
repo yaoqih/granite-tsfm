@@ -82,8 +82,8 @@ tsp = TimeSeriesPreprocessor(
     scaler_type="standard",
 )
 
-dset_train, dset_valid, dset_test = get_datasets(tsp, final_df,split_config = {"train": '2023-01-01', "test": '2024-01-01'})
-TTM_MODEL_PATH = "/root/granite-tsfm/model_save/TTM_cl-32_fl-1_pl-16_apl-6_ne-30_es-False/ttm_pretrained"
+dset_train, dset_valid, dset_test = get_datasets(tsp, final_df,split_config = {"train": '2022-01-01', "test": '2023-01-01'})
+TTM_MODEL_PATH = "/root/granite-tsfm/tmp/TTM_cl-32_fl-1_pl-16_apl-6_ne-30_es-False/checkpoint/checkpoint-314563"
 
 zeroshot_model = get_model(
     TTM_MODEL_PATH,
@@ -97,17 +97,17 @@ trainer = Trainer(
     model=zeroshot_model,
     args=TrainingArguments(
         output_dir=temp_dir,
-        per_device_eval_batch_size=800,
+        per_device_eval_batch_size=1000,
     ),
 )
-batch_size = 800
+batch_size = 1000
 import torch
 from torch.utils.data import Dataset
 from collections import defaultdict
 from datetime import datetime
-
-dfs=[]
+result_save=[]
 for dataset_spilt,save_name in zip([dset_valid,dset_test],['valid','test']):
+    dfs=[]
     # print(trainer.evaluate(dataset))
     context_length=trainer.model.config.context_length
     # predictions_dict = trainer.predict(dataset_spilt)
@@ -126,40 +126,46 @@ for dataset_spilt,save_name in zip([dset_valid,dset_test],['valid','test']):
         df.reset_index(drop=True, inplace=True)
         dfs.append(df)
 
-final_df = pd.concat(dfs, ignore_index=True)
-# final_df.to_csv(f"zero_shot_{save_name}.csv", index=False)  # 保存为Excel文件
+    final_df = pd.concat(dfs, ignore_index=True)
+    # final_df.to_csv(f"zero_shot_{save_name}.csv", index=False)  # 保存为Excel文件
 
-grouped = final_df.groupby('date')
-ids=[]
-for id,group in grouped:
-    if len(group)>1000:
-        id_=group['predict'].idxmax()
-        ids.append(id_)
-result = final_df.loc[ids]
-# 将结果保存到Excel文件
-# result.to_excel(f'highest_predict_{save_name}.xlsx', index=False)
-print(f'{save_name}_mean',result['change_rate'].mean())
-prices=[1]
-for i in range(len(result)):
-    prices.append(prices[-1]*(1+result.iloc[i]['change_rate']))
-print(f'{save_name}_max_drawdown',calculate_max_drawdown_simple(prices))
-print(f'{save_name}_std',result['change_rate'].std())
-print(f'{save_name}_end_price',prices[-1])
+    grouped = final_df.groupby('date')
+    ids=[]
+    for id,group in grouped:
+        if len(group)>1000:
+            id_=group['predict'].idxmax()
+            ids.append(id_)
+    result = final_df.loc[ids]
+    # 将结果保存到Excel文件
+    # result.to_excel(f'highest_predict_{save_name}.xlsx', index=False)
+    print(f'{save_name}_mean',result['change_rate'].mean())
+    result_save.append(result['change_rate'].mean())
+    prices=[1]
+    for i in range(len(result)):
+        prices.append(prices[-1]*(1+result.iloc[i]['change_rate']))
+    print(f'{save_name}_max_drawdown',calculate_max_drawdown_simple(prices))
+    print(f'{save_name}_std',result['change_rate'].std())
+    print(f'{save_name}_end_price',prices[-1])
+    result_save.append(calculate_max_drawdown_simple(prices))
+    result_save.append(result['change_rate'].std())
+    result_save.append(prices[-1])
 
-df_sorted = result.sort_values(by='predict', ascending=False)
-# 2. 最小二乘法拟合
-x = np.arange(len(df_sorted))  # x轴为索引
-y = df_sorted['change_rate'].values  # y轴为change_rate值
-# 进行线性拟合
-slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
-# 拟合方程: y = slope * x + intercept
-# 3. 计算y=0时的x值
-x_zero = -intercept / slope
+    df_sorted = result.sort_values(by='predict', ascending=False)
+    # 2. 最小二乘法拟合
+    x = np.arange(len(df_sorted))  # x轴为索引
+    y = df_sorted['change_rate'].values  # y轴为change_rate值
+    # 进行线性拟合
+    slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
+    # 拟合方程: y = slope * x + intercept
+    # 3. 计算y=0时的x值
+    x_zero = -intercept / slope
 
-# 4. 找到最接近的且大于0的点
-x_nearest = int(x_zero) if int(x_zero)*slope+intercept>0 else int(x_zero) - 1
-x_nearest = min(max(0, x_nearest), len(df_sorted) - 1)
+    # 4. 找到最接近的且大于0的点
+    x_nearest = int(x_zero) if int(x_zero)*slope+intercept>0 else int(x_zero) - 1
+    x_nearest = min(max(0, x_nearest), len(df_sorted) - 1)
 
-# 获取对应的predict值
-result_predict = df_sorted.iloc[x_nearest]['predict']
-print(f'{save_name}_trand_point',result_predict)
+    # 获取对应的predict值
+    result_predict = df_sorted.iloc[x_nearest]['predict']
+    print(f'{save_name}_trand_point',result_predict)
+    result_save.append(result_predict)
+print(result_save)

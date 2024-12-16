@@ -401,7 +401,7 @@ if __name__ == "__main__":
     for file in tqdm(parquet_files,'reading parquet files'):
         # 读取parquet文件
         df = pd.read_parquet(file)
-        if len(df)<800:
+        if len(df)<200:
             continue
         
         # 将date列转换为datetime类型
@@ -439,7 +439,7 @@ if __name__ == "__main__":
         scaler_type="standard",
     )
 
-    dset_train, dset_valid, dset_test = get_datasets(tsp, final_df,split_config = {"train": '2022-01-01', "test": '2023-01-01'})
+    dset_train, dset_valid, dset_test = get_datasets(tsp, final_df,split_config = {"train": '2024-01-01', "test": '2024-06-01'},all_train=True)
     # Get model
     model = get_base_model(args)
     # open('model.txt','w').write(str(model))

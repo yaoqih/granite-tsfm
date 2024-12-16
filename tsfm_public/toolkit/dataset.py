@@ -655,9 +655,9 @@ class ForecastDFDataset(BaseConcatDFDataset):
             ret['past_values'][-2:,0]=0
 
             return ret
-        def get_last(self):
+        def get_last(self,index=-1):
             # seq_x: batch_size x seq_len x num_x_cols
-            index= len(self)
+            index= len(self)+index+1
             time_id = index * self.stride
 
             seq_x = self.X[time_id : time_id + self.context_length].values.astype(np.float32)
