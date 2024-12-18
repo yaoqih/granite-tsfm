@@ -6,6 +6,7 @@ import pandas as pd
 import time
 import akshare as ak
 from multiprocessing import Pool,Lock
+from tqdm import tqdm
 other_file_path='./'
 proxies = { "http": None, "https": None}
 s=requests.session()
@@ -84,24 +85,25 @@ def callback(result):
     global lock
     with lock:
         print("Process finished with result:", result)
-def download_basic_data_all(data_path,deubg=False):
+def download_basic_data_all(data_path,debug=False):
     '''
     下载所有原始数据
-    :data_path:存放地址
+    :data_path: 存放地址
+    :debug: 是否开启调试模式（调试模式下单进程运行）
     '''
     df = ak.stock_info_a_code_name()['code']
     codelist = list(df)
-    download_basic_data('1'+','+data_path)
-    for i in range(1,len(codelist)):
-        codelist[i]=str(codelist[i])+','+data_path
-    if deubg:
-        for code in codelist[1:]:
+    codelist = [code + ',' + data_path for code in codelist]
+
+    if debug:
+        for code in tqdm(codelist, desc="Downloading (Debug Mode)"):
             download_basic_data(code)
-    lock = Lock()
-    pool = Pool(16, initializer=init, initargs=(lock,))
-    pool.map_async(download_basic_data,codelist)
-    pool.close()
-    pool.join()
+    else:
+        lock = Lock()
+        with Pool(16, initializer=init, initargs=(lock,)) as pool:
+            with tqdm(total=len(codelist), desc="Downloading") as pbar:
+                for _ in pool.imap_unordered(download_basic_data, codelist):
+                    pbar.update(1)
 
     print("All processes are finished.")
     deleteNullFile(data_path)
@@ -112,7 +114,7 @@ if __name__ == '__main__':
         os.mkdir('./'+'basic_data')
     basic_data_save_path='./'+'basic_data/'
     delet(basic_data_save_path)
-    download_basic_data_all(basic_data_save_path,deubg=True)
+    download_basic_data_all(basic_data_save_path,debug=False)
     print(len(os.listdir(basic_data_save_path)))
 
 #python scripts/dump_bin.py dump_all --csv_path  ~/.qlib/csv_data/my_data --qlib_dir ~/.qlib/qlib_data/my_data --include_fields open,close,high,low,volume

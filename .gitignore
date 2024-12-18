@@ -156,3 +156,5 @@ exp
 model_save
 basic_data
 factor_data
+predict_result
+static

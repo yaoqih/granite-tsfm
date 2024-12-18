@@ -1,7 +1,7 @@
 import pandas as pd
 import pyarrow.parquet as pq
 import os
-
+from tqdm import tqdm
 def calculate_growth_rate(df, parquet_folder, output_file):
     """
     遍历 DataFrame 的每一行，读取对应的 Parquet 文件，计算增长率，并更新 DataFrame。
@@ -15,8 +15,13 @@ def calculate_growth_rate(df, parquet_folder, output_file):
     results = []  # 用于存储每一行的结果
     if 'true'  in df.columns and df['true'].isnull().sum()==0:
         return
-
-    for index, row in df.iterrows():
+    table_dict={}
+    for veridy_name in os.listdir('./basic_data/'):
+        parquet_file = os.path.join(parquet_folder, veridy_name)
+        table = pq.read_table(parquet_file, columns=['date', 'open'])
+        table_dict[os.path.join(parquet_folder, f"{veridy_name}")]=table
+        
+    for index, row in tqdm(df.iterrows()):
         stock_id = row['stock_id']
         date = row['date']
         predict = row['predict']
@@ -27,7 +32,7 @@ def calculate_growth_rate(df, parquet_folder, output_file):
 
         try:
             # 读取 Parquet 文件
-            table = pq.read_table(parquet_file, columns=['date', 'open']) # 假设你的价格数据列名为 'open'
+            table =table_dict[parquet_file]
             stock_df = table.to_pandas()
 
             # 将日期列转换为 datetime 类型

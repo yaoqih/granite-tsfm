@@ -674,9 +674,9 @@ class ForecastDFDataset(BaseConcatDFDataset):
             # seq_y[:, self.y_mask_conditional] = 0
 
             ret = {
-                "past_values": np_to_torch(np.nan_to_num(seq_x, nan=self.fill_value)).unsqueeze(0),
+                "past_values": np_to_torch(np.nan_to_num(seq_x, nan=self.fill_value)),
                 # "future_values": np_to_torch(np.nan_to_num(seq_y, nan=self.fill_value)),
-                "past_observed_mask": np_to_torch(~np.isnan(seq_x)).unsqueeze(0),
+                "past_observed_mask": np_to_torch(~np.isnan(seq_x)),
                 # "future_observed_mask": np_to_torch(~np.isnan(seq_y)),
             }
 
@@ -698,7 +698,7 @@ class ForecastDFDataset(BaseConcatDFDataset):
                     time_id : time_id + self.context_length + self.prediction_length, :
                 ]
 
-            return [ret]
+            return ret
 
         def revert_scaling(self, tsp,group_id):
             df=self.data_df.copy()

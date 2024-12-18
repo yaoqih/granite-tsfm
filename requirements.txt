@@ -1,0 +1,33 @@
+akshare
+accelerate
+comet_ml
+datasets
+Deprecated
+fastapi
+Flask
+ipython
+matplotlib
+numpy
+pandas
+parameterized
+plotly
+prometheus_client
+pyarrow
+pydantic
+pytest
+PyYAML
+redis
+Requests
+scikit_learn
+scipy
+seaborn
+starlette
+streamlit
+# TA_Lib
+toml
+torch
+tqdm
+transformers
+tensorboardssh -p 26330 root@i-1.gpushare.com
+uvicorn
+# conda install -c conda-forge ta-lib

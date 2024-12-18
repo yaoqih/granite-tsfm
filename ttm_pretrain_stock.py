@@ -109,12 +109,34 @@ def calculate_max_drawdown_simple(prices):
             
     return max_drawdown
 class CustomCallback(TrainerCallback):
-    def __init__(self, data_valid, data_test, model_save_path,batch_size=32, **kwargs):
+    def __init__(self, data_valid, data_test, model_save_path,batch_size, **kwargs):
         self.data_valid = data_valid
         self.data_test = data_test
         self.model_save_path = model_save_path
         self.batch_size=batch_size
+        self.start_dropout=args.dropout
+        self.num_epochs=args.num_epochs
         
+    def on_epoch_begin(self, args, state, control, **kwargs):
+        """
+        在每个epoch开始时被调用，更新dropout rate
+        """
+        current_epoch = state.epoch
+        if current_epoch < 0:
+            # 在开始阶段保持初始dropout
+            dropout = self.start_dropout
+        else:
+            # 计算当前epoch的dropout rate
+            progress = (current_epoch) / (self.num_epochs )
+            # 使用cosine函数实现先快后慢的衰减
+            dropout = 0.5 * (self.start_dropout ) * (1 + math.cos(math.pi * progress))
+        
+        # 更新模型中所有dropout层的比例
+        for module in self.model.modules():
+            if isinstance(module, torch.nn.Dropout):
+                module.p = dropout
+        print(f"Epoch {int(current_epoch)}: Dropout set to {dropout:.4f}")
+
     def on_save(self, args, state, control, **kwargs):
         # 在每个epoch结束时调用自定义函数
         results_all=[state.epoch]
@@ -282,7 +304,7 @@ def pretrain(args, model, dset_train, dset_val):
         early_stopping_patience=10,  # Number of epochs with no improvement after which to stop
         early_stopping_threshold=0.0,  # Minimum improvement required to consider as improvement
     )
-    customcallback=CustomCallback(data_valid=dset_val,data_test=dset_test,model_save_path=args.save_dir,batch_size=args.batch_size)
+    customcallback=CustomCallback(data_valid=dset_val,data_test=dset_test,model_save_path=args.save_dir,batch_size=args.batch_size,args=args)
     # Set trainer
     if args.early_stopping:
         trainer = Trainer(
