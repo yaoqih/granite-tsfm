@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 def get_ttm_args():
-    parser = argparse.ArgumentParser(description="TTM pretrain arguments.")
+    parser = argparse.ArgumentParser(description="TTM pretrain arguments.",exit_on_error=False)
     # Adding a positional argument
     parser.add_argument(
         "--forecast_length",
@@ -72,13 +72,13 @@ def get_ttm_args():
         help="Number of GPUs",
     )
     parser.add_argument("--random_seed", "-rs", type=int, required=False, default=42, help="Random seed")
-    parser.add_argument("--batch_size", "-bs", type=int, required=False, default=1024, help="Batch size")
+    parser.add_argument("--batch_size", "-bs", type=int, required=False, default=512, help="Batch size")
     parser.add_argument(
         "--num_epochs",
         "-ne",
         type=int,
         required=False,
-        default=30,
+        default=40,
         help="Number of epochs",
     )
 
@@ -95,7 +95,7 @@ def get_ttm_args():
         "-lr",
         type=float,
         required=False,
-        default=0.1,
+        default=0.001,
         help="Learning rate",
     )
     parser.add_argument(
@@ -192,7 +192,7 @@ def get_ttm_args():
         "--num_layers",
         type=int,
         required=False,
-        default=3,
+        default=8,
         help="Number of  layers",
     )
 
@@ -200,7 +200,7 @@ def get_ttm_args():
         "--decoder_num_layers",
         type=int,
         required=False,
-        default=4,
+        default=8,
         help="Number of  decoder layers",
     )
 
@@ -218,6 +218,13 @@ def get_ttm_args():
         required=False,
         default=0.2,
         help="head_dropout",
+    )
+    parser.add_argument(
+        "--checkpoint_epoch",
+        type=int,
+        required=False,
+        default=0,
+        help="checkpoint_epoch",
     )
 
     # Parsing the arguments

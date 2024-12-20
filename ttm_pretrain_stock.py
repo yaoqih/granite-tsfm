@@ -132,7 +132,7 @@ class CustomCallback(TrainerCallback):
             dropout = 0.5 * (self.start_dropout ) * (1 + math.cos(math.pi * progress))
         
         # 更新模型中所有dropout层的比例
-        for module in self.model.modules():
+        for module in kwargs['model'].modules():
             if isinstance(module, torch.nn.Dropout):
                 module.p = dropout
         print(f"Epoch {int(current_epoch)}: Dropout set to {dropout:.4f}")
@@ -148,10 +148,12 @@ class CustomCallback(TrainerCallback):
             dfs=[]
             count=0
             for dataset in tqdm(dataset_spilt.datasets,save_name):
+                df=dataset.revert_scaling(tsp,dataset.group_id[0])
+                if len(df)<context_length+1:
+                    continue
                 iterator = BatchIterator(dataset, self.batch_size)
                 flattened_array = custom_predict(kwargs['model'], iterator)
                 # flattened_array = predictions_dict.predictions[0][:,:,0].flatten()  # 变成一维数组，长度为324
-                df=dataset.revert_scaling(tsp,dataset.group_id[0])
                 additional_elements = np.zeros(context_length)  # 或者其他你想要的值
                 # final_array = np.concatenate([additional_elements, flattened_array[count:count+len(df)-context_length]])
                 final_array = np.concatenate([additional_elements, flattened_array])
@@ -423,8 +425,8 @@ if __name__ == "__main__":
     for file in tqdm(parquet_files,'reading parquet files'):
         # 读取parquet文件
         df = pd.read_parquet(file)
-        if len(df)<200:
-            continue
+        # if len(df)<400:
+        #     continue
         
         # 将date列转换为datetime类型
         df[timestamp_column] = pd.to_datetime(df[timestamp_column])
@@ -461,7 +463,7 @@ if __name__ == "__main__":
         scaler_type="standard",
     )
 
-    dset_train, dset_valid, dset_test = get_datasets(tsp, final_df,split_config = {"train": '2024-01-01', "test": '2024-06-01'},all_train=True)
+    dset_train, dset_valid, dset_test = get_datasets(tsp, final_df,split_config = {"train": '2023-01-01', "test": '2024-01-01'})
     # Get model
     model = get_base_model(args)
     # open('model.txt','w').write(str(model))

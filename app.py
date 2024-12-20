@@ -9,7 +9,7 @@ def result_translate(file_name):
     df1=pd.read_csv(file_name)
     df1.sort_values('predict',ascending=False,inplace=True)
     df1.reset_index(drop=True,inplace=True)
-    df1=df1[:100]
+    df1=df1[:20]
     df1['predict'] = df1['predict'].round(4)
     if 'true' in df1.columns:
         df1['true'] = df1['true'].round(4)

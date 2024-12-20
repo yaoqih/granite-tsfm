@@ -289,14 +289,31 @@ def _split_group_train_test(
     else:
         train_df = _split_group_by_index(group_df, name, start_index=0, end_index=train_size)
 
-        valid_df = _split_group_by_index(
+        
+        if train_size<valid_test_offset:
+            valid_df = _split_group_by_index(
+                group_df,
+                name,
+                start_index=0,
+                end_index=train_size + valid_size,
+            )
+        else:
+            valid_df = _split_group_by_index(
             group_df,
             name,
             start_index=train_size - valid_test_offset,
             end_index=train_size + valid_size,
         )
-
-        test_df = _split_group_by_index(group_df, name, start_index=train_size + valid_size - valid_test_offset)
+            
+        if train_size+valid_size<valid_test_offset:
+            test_df = _split_group_by_index(
+                group_df,
+                name,
+                start_index=0,
+                end_index=train_size + valid_size + test_size,
+            )
+        else:
+            test_df = _split_group_by_index(group_df, name, start_index=train_size + valid_size - valid_test_offset)
 
     return train_df, valid_df, test_df
 

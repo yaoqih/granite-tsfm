@@ -158,3 +158,4 @@ basic_data
 factor_data
 predict_result
 static
+scaler_dict

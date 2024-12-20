@@ -1,9 +1,9 @@
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 import logging
 import math
-import os
 import tempfile
 import comet_ml
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 import pandas as pd
 from torch.optim import AdamW
@@ -28,6 +28,9 @@ import torch
 from torch.utils.data import DataLoader
 import akshare as ak
 from ttm_pretrain_stock import custom_predict
+import sys
+import json
+# print()
 data_path='./basic_data'
 timestamp_column = "date"
 id_columns = ['stock_id']  # mention the ids that uniquely identify a time-series.
@@ -45,7 +48,7 @@ for file in tqdm(parquet_files,'reading parquet files'):
     
     # 读取parquet文件
     df = pd.read_parquet(file)
-    if len(df)<250:
+    if df.shape[0]<40:
         continue
     # 将date列转换为datetime类型
     df[timestamp_column] = pd.to_datetime(df[timestamp_column])
@@ -66,6 +69,14 @@ for file in tqdm(parquet_files,'reading parquet files'):
 # 合并所有数据框
 final_df = pd.concat(dfs, ignore_index=True)
 args = get_ttm_args()
+model_path='/root/granite-tsfm/tmp/TTM_cl-32_fl-1_pl-16_apl-6_ne-30_es-False/checkpoint/'
+model_list=sorted(os.listdir('/root/granite-tsfm/tmp/TTM_cl-32_fl-1_pl-16_apl-6_ne-30_es-False/checkpoint/'),key=lambda x:int(x.split('-')[-1]))
+# TTM_MODEL_PATH = model_path+model_list[args.checkpoint_epoch]
+TTM_MODEL_PATH = "/root/granite-tsfm/model_save/TTM_cl-32_fl-1_pl-16_apl-6_ne-30_es-False_full_0.5dp/checkpoint/checkpoint-154392"
+print(TTM_MODEL_PATH)
+config= json.load(open(f"{TTM_MODEL_PATH}/config.json"))
+args.d_model=config['d_model']
+args.decoder_d_model=config['decoder_d_model']
 
 column_specifiers = {
     "timestamp_column": timestamp_column,
@@ -85,7 +96,6 @@ tsp = TimeSeriesPreprocessor(
 )
 
 dset_train, dset_valid, dset_test = get_datasets(tsp, final_df,split_config = {"train": '2024-01-01', "test": '2024-06-01'})
-TTM_MODEL_PATH = "/root/granite-tsfm/tmp/TTM_cl-32_fl-1_pl-16_apl-6_ne-30_es-False/checkpoint/checkpoint-344472"
 
 zeroshot_model = get_model(
     TTM_MODEL_PATH,
@@ -107,9 +117,10 @@ import torch
 from torch.utils.data import Dataset
 from collections import defaultdict
 from datetime import datetime
+df2=ak.stock_info_a_code_name()
 
 
-for last in range(2,6):
+for last in [1]:
     for dataset_spilt,save_name in zip([dset_test],['test']):
         # print(trainer.evaluate(dataset))
         context_length=trainer.model.config.context_length
@@ -157,7 +168,6 @@ for last in range(2,6):
         final_df = pd.concat(dfs, ignore_index=True)
         final_df=final_df[['stock_id','date','predict']]
         final_df['code'] = final_df['stock_id'].str[-6:]
-        df2=ak.stock_info_a_code_name()
         # 2. 使用merge函数将df1和df2合并
         final_df = final_df.merge(df2[['code', 'name']], 
                         on='code',  # 使用code列作为合并键

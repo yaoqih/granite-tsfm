@@ -32,7 +32,8 @@ from .util import (
     join_list_without_repeat,
     select_by_fixed_fraction,
 )
-
+import os
+import joblib
 
 LOGGER = logging.getLogger(__file__)
 
@@ -430,16 +431,23 @@ class TimeSeriesPreprocessor(FeatureExtractionMixin):
     def _train_scaler(self, df: pd.DataFrame):
         cols_to_scale = self._get_other_columns_to_scale()
         scaler_class = self._get_scaler_class(self.scaler_type)
-
+        if not os.path.exists('./scaler_dict'):
+            os.mkdir('./scaler_dict')
         for name, g in self._get_groups(df):
             if self.scaling:
+                self.scaler_dict[name],self.target_scaler_dict[name]=None,None
                 # train and transform
-                if cols_to_scale:
-                    self.scaler_dict[name] = scaler_class()
-                    self.scaler_dict[name].fit(g[cols_to_scale])
+                if f'{name}.pkl' in os.listdir('./scaler_dict'):
+                    self.scaler_dict[name],self.target_scaler_dict[name]=joblib.load(f'./scaler_dict/{name}.pkl')
+                else:
+                    if cols_to_scale:
+                        self.scaler_dict[name] = scaler_class()
+                        self.scaler_dict[name].fit(g[cols_to_scale])
 
-                self.target_scaler_dict[name] = scaler_class()
-                self.target_scaler_dict[name].fit(g[self.target_columns])
+                    self.target_scaler_dict[name] = scaler_class()
+                    self.target_scaler_dict[name].fit(g[self.target_columns])
+                    joblib.dump((self.scaler_dict[name],self.target_scaler_dict[name]),f'./scaler_dict/{name}.pkl')
+
 
     def _train_categorical_encoder(self, df: pd.DataFrame):
         cols_to_encode = self._get_columns_to_encode()
@@ -859,7 +867,7 @@ def get_datasets(
     )
 
     # data preprocessing
-    ts_preprocessor.train(train_data)
+    ts_preprocessor.train(dataset)
 
     # specify columns
     column_specifiers = {
